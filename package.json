@@ -1,0 +1,11 @@
+{
+  "name": "sign-language-translator",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Plain HTML, CSS, and JavaScript for static ASL hand shape recognition.",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check js/app.js && node --check js/recognition.js && node --check js/data.js && node --check js/vision.js"
+  }
+}

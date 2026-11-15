@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A simple camera-based sign language hand-shape recognizer.">
+  <title>Sign Language Translator</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div id="page">
+    <header>
+      <h1>Sign Language Translator</h1>
+      <p>Use your webcam to recognize supported ASL hand shapes.</p>
+      <nav aria-label="Main menu">
+        <button type="button" class="nav-item active" data-view="translate" aria-current="page">Translator</button>
+        <span aria-hidden="true"> | </span>
+        <button type="button" class="nav-item" data-view="practice">Practice</button>
+        <span aria-hidden="true"> | </span>
+        <button type="button" class="nav-item" data-view="library">My signs (<span id="library-count">0</span>)</button>
+        <span aria-hidden="true"> | </span>
+        <button type="button" class="nav-item" data-view="sessions">Saved text</button>
+        <span aria-hidden="true"> | </span>
+        <button type="button" class="nav-item" data-open-about>About</button>
+      </nav>
+    </header>
+
+    <main id="main">
+      <div class="page-location">
+        <span>Home / <span id="breadcrumb-current">Translator</span></span>
+        <button type="button" id="global-camera-stop" class="hidden">Stop camera</button>
+      </div>
+
+      <div id="file-notice" class="notice hidden" role="status">
+        <strong>To use the camera, start a local web server.</strong>
+        <p>Open a terminal in this folder and run <code>python3 -m http.server 8000</code>
+          (Windows: <code>py -m http.server 8000</code>), then open
+          <a href="http://localhost:8000">http://localhost:8000</a>.</p>
+      </div>
+
+      <h2 id="page-title">Sign Language Translator</h2>
+      <p id="page-subtitle">Start the camera and hold one supported hand shape steady.</p>
+
+      <div class="notice hidden" id="app-alert" role="alert">
+        <span id="alert-text"></span>
+        <button type="button" id="dismiss-alert" aria-label="Dismiss message">Dismiss</button>
+      </div>
+
+      <section class="practice-banner hidden" id="practice-banner" aria-labelledby="practice-heading">
+        <div class="practice-letter" id="practice-letter">L</div>
+        <div class="practice-prompt">
+          <h3 id="practice-heading">Practice L</h3>
+          <p id="practice-description">Extend your index finger and thumb. Curl the other three fingers.</p>
+          <p id="practice-result" role="status">Hold the shape until the progress bar fills.</p>
+        </div>
+        <div class="practice-actions">
+          <label for="practice-select">Choose a sign:</label>
+          <select id="practice-select"></select>
+          <button type="button" id="next-practice">Next sign</button>
+        </div>
+      </section>
+
+      <div id="workspace-view">
+        <div class="workspace-grid">
+          <section class="panel camera-card" aria-labelledby="camera-heading">
+            <h3 id="camera-heading" class="panel-title">1. Camera</h3>
+            <div class="camera-stage" id="camera-stage">
+              <video id="camera-video" autoplay playsinline muted aria-label="Live camera feed"></video>
+              <canvas id="landmark-canvas" aria-label="Hand tracking overlay"></canvas>
+              <span class="camera-tag" id="camera-tag">Camera off</span>
+              <div class="camera-placeholder" id="camera-placeholder">
+                <p><strong>Camera is off</strong></p>
+                <p>Click below to get started.</p>
+                <button type="button" id="start-camera">Start camera</button>
+                <p class="small">Video is processed on your device.</p>
+              </div>
+              <div class="camera-loading hidden" id="camera-loading" role="status">
+                <p><strong id="loading-message">Loading hand tracking...</strong></p>
+                <p>The first model load may take a moment.</p>
+              </div>
+              <div class="live-hint hidden" id="live-hint">Bring one hand into view</div>
+            </div>
+            <div class="camera-controls">
+              <label><input type="checkbox" id="show-landmarks" checked> Show hand tracking</label>
+              <button type="button" id="mirror-button" aria-pressed="true" aria-label="Turn off mirrored camera preview">Mirror</button>
+              <button type="button" id="stop-camera" class="hidden">Stop camera</button>
+            </div>
+            <div class="camera-footer">
+              <span id="engine-state">Camera off</span>
+              <span id="fps-label">— fps</span>
+            </div>
+          </section>
+
+          <section class="panel transcript-card" aria-labelledby="transcript-heading">
+            <h3 id="transcript-heading" class="panel-title">2. Recognized text</h3>
+            <div class="detected-sign">
+              <div class="sign-symbol" id="sign-symbol" aria-label="Current sign">—</div>
+              <div class="sign-detail">
+                <strong id="sign-name">Waiting for a hand</strong>
+                <span id="sign-source">Start the camera to begin</span>
+              </div>
+            </div>
+            <div class="capture-progress">
+              <div class="progress-caption"><span id="hold-caption">Hold a sign to add it</span><span id="match-value">—</span></div>
+              <div class="progress-track" id="hold-progress" role="progressbar" aria-label="Stable sign hold progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="hold-fill"></div></div>
+            </div>
+            <label for="transcript" class="text-label">Text (you can edit this):</label>
+            <textarea id="transcript" rows="6" maxlength="5000" spellcheck="false" placeholder="Recognized letters appear here."></textarea>
+            <div class="transcript-meta"><span id="character-count">0 characters</span></div>
+            <div class="button-row">
+              <button type="button" id="add-sign" disabled>Add sign</button>
+              <button type="button" id="add-space">Space</button>
+              <button type="button" id="backspace" aria-label="Delete last character">Backspace</button>
+              <button type="button" id="clear-transcript" aria-label="Clear transcript">Clear</button>
+            </div>
+            <p class="check-row"><label><input type="checkbox" id="auto-add" checked> Add automatically after a steady hold</label></p>
+            <div class="button-row transcript-actions">
+              <button type="button" id="copy-text" disabled>Copy</button>
+              <button type="button" id="download-text" disabled>Download</button>
+              <button type="button" id="save-session" aria-label="Save text on this device" disabled>Save text</button>
+              <button type="button" id="speak-text" disabled>Read aloud</button>
+            </div>
+          </section>
+        </div>
+
+        <section class="sign-guide" aria-labelledby="starter-heading">
+          <div class="section-heading">
+            <h3 id="starter-heading">Supported signs</h3>
+            <button type="button" class="link-button" id="show-practice">Practice these signs</button>
+          </div>
+          <div id="starter-signs" class="sign-grid"></div>
+        </section>
+        <p class="small instructions">Keep one hand upright and visible, with your palm toward the camera.
+          Hold for about one second. Relax your hand before repeating a letter.</p>
+        <p class="small scope-note"><strong>Current scope:</strong> isolated static hand shapes.
+          Full ASL sentences, moving signs, and facial expressions are not translated.</p>
+      </div>
+
+      <section id="library-view" class="hidden" aria-labelledby="library-heading">
+        <h3 id="library-heading">My signs</h3>
+        <p>Teach a static pose and choose the text it should add. Examples stay in this browser.</p>
+        <p><button type="button" id="new-sign">Teach a sign</button></p>
+        <div id="custom-signs" class="custom-sign-grid"></div>
+        <div class="button-row library-toolbar">
+          <button type="button" id="export-signs">Export my signs</button>
+          <button type="button" id="import-signs">Import signs</button>
+          <input type="file" accept="application/json,.json" id="import-file" hidden>
+          <span id="sample-summary">No examples yet</span>
+        </div>
+        <p class="small">Only hand landmark numbers and your labels are saved. Custom poses are personal shortcuts;
+          they are not verified ASL translations.</p>
+      </section>
+
+      <section id="sessions-view" class="hidden" aria-labelledby="sessions-heading">
+        <h3 id="sessions-heading">Saved text</h3>
+        <p>Only text you choose to save appears here. Saved text stays in this browser.</p>
+        <div id="session-list"></div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Sign Language Translator · Version 1.1</span>
+      <button type="button" class="link-button" data-open-about>About / privacy</button>
+    </footer>
+  </div>
+
+  <dialog id="about-dialog" aria-labelledby="about-title">
+    <div class="dialog-header"><h2 id="about-title">About Sign Language Translator</h2><button type="button" data-close-dialog aria-label="Close about">Close</button></div>
+    <div class="dialog-body">
+      <p>This app uses a real MediaPipe hand-tracking model to find 21 points on your hand.
+        Geometric rules and your saved examples are used to recognize supported static hand shapes.</p>
+      <h3>Supported shapes</h3>
+      <p>I, L, U, V, W, Y, and the “I love you” hand shape. You can teach the app additional personal static poses.</p>
+      <h3>Requirements</h3>
+      <p>A camera, a browser with WebGL graphics support, and a secure HTTPS page or localhost.
+        To run locally: <code>python3 -m http.server 8000</code>, then open <code>http://localhost:8000</code>.</p>
+      <h3>Limitations</h3>
+      <p>This is not a full ASL interpreter. It does not recognize continuous signing, moving letters such as J and Z,
+        facial grammar, or two-handed signs. Personal examples cannot distinguish poses differing only by orientation.</p>
+      <p>“Shape match” measures geometric similarity. It is not a measured accuracy percentage.
+        Recognition accuracy has not been validated with a real signer study.</p>
+      <h3>Privacy</h3>
+      <p>Video is processed in this browser and is not recorded or uploaded. Examples and saved text use local browser storage.
+        Model files are included with the app. Read aloud uses the browser’s speech service, which may process text remotely.</p>
+      <p><a href="https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker/web_js" target="_blank" rel="noopener noreferrer">MediaPipe documentation</a>
+        | <a href="https://www.nidcd.nih.gov/health/american-sign-language" target="_blank" rel="noopener noreferrer">About American Sign Language</a></p>
+    </div>
+    <div class="dialog-footer"><button type="button" data-close-dialog>Close</button></div>
+  </dialog>
+
+  <dialog id="teach-dialog" aria-labelledby="teach-title">
+    <div class="dialog-header"><h2 id="teach-title">Teach a sign</h2><button type="button" data-close-dialog aria-label="Close teach a sign">Close</button></div>
+    <div class="dialog-body">
+      <p>Enter a label, then capture examples of one static pose. Keep the same hand shape and vary the angle slightly.</p>
+      <label for="sign-label" class="text-label">Text to add:</label>
+      <input type="text" id="sign-label" maxlength="24" autocomplete="off" placeholder="For example: A">
+      <div class="teach-preview">
+        <canvas id="teach-canvas" width="480" height="300" aria-label="Live hand landmarks for teaching"></canvas>
+        <span id="teach-tracking-status">Start the camera first.</span>
+      </div>
+      <p><strong id="capture-count">0 / 24 examples</strong></p>
+      <div class="progress-track"><div id="capture-fill"></div></div>
+      <p id="capture-instruction" class="small" role="status">Only landmark coordinates are saved.</p>
+      <div class="button-row"><button type="button" id="capture-examples">Capture examples</button><button type="button" id="save-sign" disabled>Save sign</button></div>
+    </div>
+  </dialog>
+
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title">
+    <div class="dialog-header"><h2 id="confirm-title">Confirm</h2><button type="button" data-close-dialog aria-label="Cancel">Close</button></div>
+    <div class="dialog-body"><p id="confirm-message"></p></div>
+    <div class="dialog-footer"><button type="button" id="confirm-cancel">Cancel</button><button type="button" id="confirm-accept">Continue</button></div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <noscript><p class="notice">JavaScript is required for camera recognition and the app controls.</p></noscript>
+  <script>
+    // A file:// page cannot load the model safely; show local-server instructions.
+    if (location.protocol === 'file:') {
+      document.getElementById('file-notice').classList.remove('hidden');
+      document.getElementById('start-camera').disabled = true;
+      document.getElementById('start-camera').textContent = 'Start the local server first';
+    }
+  </script>
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
