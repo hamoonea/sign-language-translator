@@ -1,0 +1,74 @@
+name: Import Sign Language Translator
+on:
+  push:
+    paths:
+      - '.bootstrap/source.xz.b64'
+      - '.github/workflows/import.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Restore application and verified MediaPipe assets
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import io
+          import json
+          import lzma
+          import pathlib
+          import tarfile
+          import time
+          import urllib.request
+
+          root = pathlib.Path.cwd()
+          encoded = (root / ".bootstrap/source.xz.b64").read_text().strip()
+          archive = lzma.decompress(base64.b64decode(encoded))
+          with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as tar:
+              for entry in tar.getmembers():
+                  target = (root / entry.name).resolve()
+                  if not target.is_relative_to(root):
+                      raise ValueError("Unsafe archive entry: " + entry.name)
+                  tar.extract(entry, root, filter="data")
+
+          manifest = json.loads((root / "vendor/asset-manifest.json").read_text())
+          for item in manifest["files"]:
+              target = root / "vendor" / item["path"]
+              target.parent.mkdir(parents=True, exist_ok=True)
+              for attempt in range(3):
+                  try:
+                      request = urllib.request.Request(item["url"], headers={"User-Agent": "sign-language-translator-bootstrap/1"})
+                      with urllib.request.urlopen(request, timeout=120) as response:
+                          contents = response.read()
+                      if len(contents) != item["size_bytes"]:
+                          raise ValueError("Unexpected file length for " + item["path"])
+                      if hashlib.sha256(contents).hexdigest() != item["sha256"]:
+                          raise ValueError("Checksum mismatch for " + item["path"])
+                      target.write_bytes(contents)
+                      print("Verified:", item["path"])
+                      break
+                  except Exception:
+                      if attempt == 2:
+                          raise
+                      time.sleep(3 * (attempt + 1))
+          PY
+      - name: Test application
+        shell: bash
+        run: |
+          npm test
+          npm run check
+      - name: Commit application source and assets
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf .bootstrap
+          git add -A
+          git commit -m "Add Sign Language Translator web app and verified MediaPipe assets"
+          git push origin HEAD:main
